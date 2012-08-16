@@ -36,21 +36,22 @@ class _IVOptimize(_OptFuncts):
     def __init__(self):
         pass
 
-    def _est_eq_setup(self, params, nuisance_param_idx=None, start_params=None):
+    def _est_eq_setup(self, params, nuis_param_idx=None, start_params=None):
         instruments = self.instruments
         endog = self.endog
         exog = self.exog
         nobs = self.nobs
-        if nuisance_param_idx is not None:  # For Testing
-            start_params[nuisance_param_idx] = params
+        if nuis_param_idx is not None:  # For Testing
+            start_params[nuis_param_idx] = params
             params = start_params
         est_vect = instruments *\
         (endog.reshape(nobs, 1) - np.dot(exog, params).reshape(nobs, 1))
         try:
-            eta_star = self._modif_newton(np.zeros(est_vect.shape[1]), est_vect,
-            np.ones(nobs) * (1. / nobs))
+            eta_star = self._modif_newton(np.zeros(est_vect.shape[1]),
+                                          est_vect,
+                                          np.ones(nobs) * (1. / nobs))
         except np.linalg.linalg.LinAlgError:
-            return np.inf
+            return - np.inf
         denom = 1. + np.dot(eta_star, est_vect.T)
         new_weights = 1. / nobs * 1. / denom
         loglik = np.sum(np.log(new_weights))
@@ -76,9 +77,14 @@ class ELIVRegress(_IVOptimize, LikelihoodModel):
         llf = - res.llf
         return ELIVResults(self, paramopt, llf)
 
-    def loglike(self, params, nuis_param_idx=None, start_params = None):
-        return self._est_eq_setup(params, nuisance_param_idx = nuis_param_idx,
-                                  start_params= start_params)
+    def loglike(self, params, nuis_param_idx=None, start_params=None):
+        return self._est_eq_setup(params, nuis_param_idx=nuis_param_idx,
+                                  start_params=start_params)
+
+    def predict(self, params, exog=None):
+        if exog is None:
+            exog = self.exog
+        return np.dot(exog, params)
 
     def score(self, a):
         return None
@@ -88,10 +94,10 @@ class ELIVResults(object):
     def __init__(self, model, paramopt, llmax):
         self.model = model
         self.params = paramopt
-        self.llf = llmax
+        self.llf = - llmax
 
     def uncons_ll(self):
-        return  np.sum(np.log(1. / self.model.nobs)) * self.model.nobs
+        return  np.log(1. / self.model.nobs) * self.model.nobs
 
     def spec_test(self):
         if self.model.ninst == self.model.nexog:
@@ -106,10 +112,11 @@ class ELIVResults(object):
         start_params = np.copy(self.params)
         start_params[param_nums] = b0_vals
         nuis_idx = np.delete(np.arange(self.model.nexog), param_nums)
-        f = lambda params: - self.model.loglike(params, nuis_param_idx=nuis_idx,
-                                              start_params = start_params)
+        f = lambda params: - self.model.loglike(params,
+                                                nuis_param_idx=nuis_idx,
+                                                start_params=start_params)
         x0 = start_params[nuis_idx]
         res = optimize.fmin_powell(f, x0, full_output=1)
-        ll = res[1]
-        llrstat = 2 * (ll - self.llf)
-        return llrstat, chi2.sf(llrstat,1)
+        ll = -1 * res[1]
+        llrstat = -2 * (ll - self.llf)
+        return llrstat, chi2.sf(llrstat, np.shape(b0_vals)[0])
