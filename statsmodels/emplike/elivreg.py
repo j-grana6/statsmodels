@@ -48,7 +48,7 @@ class _IVOptimize(_OptFuncts):
         eta_star = self._modif_newton(np.zeros(est_vect.shape[1]), est_vect,
             np.ones(nobs) * (1. / nobs))
         denom = 1. + np.dot(eta_star, est_vect.T)
-        new_weights = 1. / nobs * 1. / denom
+        new_weights =  1./nobs * 1. / denom
         loglik = np.sum(np.log(new_weights))
         return loglik
 
@@ -59,12 +59,32 @@ class ELIVRegress(_IVOptimize, LikelihoodModel):
         self.endog = endog.reshape(self.nobs, 1)
         self.exog = exog
         self.instruments = instruments
+        self.nexog = exog.shape[1]
+        self.ninst = instruments.shape[1]
 
-    def fit(self):
-        return super(ELIVRegress, self).fit(method='powell')
+    def fit(self, start_params=None, method='powell', maxiter=100,
+            full_output=True, disp=True, fargs=(), callback=None):
+        res = super(ELIVRegress, self).fit(start_params=start_params,
+                                        method=method, maxiter=maxiter,
+                                        full_output=full_output, disp=disp,
+                                        callback=callback)
+        paramopt = res.params
+        llf = res.llf
+        return ELIVResults(self, paramopt, llf)
 
     def loglike(self, params):
         return self._est_eq_setup(params)
 
     def score(self, a):
         return None
+
+
+class ELIVResults(object):
+    def __init__(self,model, paramopt, llmax):
+        self.model = model
+        self.params = paramopt
+        self.llf = llmax
+
+    def spec_test(self):
+        lluncons = np.sum(np.log(1./self.model.nobs)) * self.model.nobs
+        return - 2 * (self.llf - lluncons)
